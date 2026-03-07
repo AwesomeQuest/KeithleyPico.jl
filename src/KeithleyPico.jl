@@ -91,7 +91,7 @@ function (@main)(ARGS)
 
 	show_style_editor = false
 
-	ig.render(ctx; window_size=(1200,1200), window_title="Keithley Pico", on_exit=() -> ImPlot.DestroyContext(p_ctx)) do
+	ig.render(ctx; window_size=(1000,1100), window_title="Keithley Pico", on_exit=() -> ImPlot.DestroyContext(p_ctx)) do
 		
 		if show_style_editor
 			ig.Begin("Plot Style Editor")
