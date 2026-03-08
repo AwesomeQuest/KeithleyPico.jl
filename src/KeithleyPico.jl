@@ -174,7 +174,7 @@ function (@main)(ARGS)
 		end
 		if show_imgui_style_editor
 			ig.Begin("ImGui Style Editor")
-			ig.ShowStyleEditor(ImPlot.GetStyle())
+			ig.ShowStyleEditor()
 			ig.End()
 		end
 
