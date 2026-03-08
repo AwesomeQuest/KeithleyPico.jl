@@ -311,7 +311,7 @@ function (@main)(ARGS)
 				if ig.Button("Save Data##rt", (300,100))
 					old_monitoring = monitoring_keithley
 					monitoring_keithley = false
-					filepath = save_file()
+					filepath = save_file(;filterlist="csv")
 					if !isempty(filepath)
 						open(filepath, "w") do io
 							writedlm(io, ["TimeStamp" "Voltage" "Current"], ',')
