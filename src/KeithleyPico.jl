@@ -1,5 +1,7 @@
 module KeithleyPico
 
+using NativeFileDialog, DelimitedFiles
+using Statistics
 
 import CImGui as ig, ModernGL, GLFW
 import CSyntax: @c
@@ -69,6 +71,9 @@ function (@main)(ARGS)
 	io = ig.GetIO()
 	io.ConfigDpiScaleFonts = true
 	io.ConfigDpiScaleViewports = true
+	io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.lib.ImGuiConfigFlags_DockingEnable
+	io.ConfigFlags = unsafe_load(io.ConfigFlags) | ig.lib.ImGuiConfigFlags_ViewportsEnable
+	style = ig.GetStyle()
 	p_ctx = ImPlot.CreateContext()
 
 	global keithley_sample_period
@@ -85,8 +90,13 @@ function (@main)(ARGS)
 	iv_sweep_dir::Int32		= 0
 	xs = iv_min_volts:iv_step_voltage:iv_max_volts
 	ivsweep_x = [xs; reverse(xs)]
+	ivsweep_time = fill(Dates.now(), length(ivsweep_x)) .+ Microsecond.(1:length(ivsweep_x))
 	ivsweep_y = [x + 2x^3 for x in ivsweep_x] .+ cumsum(0.05(rand(length(ivsweep_x)) .- 0.5))
+	iv_sweeping_bool = false
+	iv_cancel_sweep = false
 	function start_iv_sweep(minvoltage, maxvoltage, stepvoltage, initialvoltage, direction, sweeptime::Nano)
+		iv_sweeping_bool = true
+		empty!(ivsweep_time)
 		empty!(ivsweep_x)
 		empty!(ivsweep_y)
 		if minvoltage > maxvoltage
@@ -99,15 +109,19 @@ function (@main)(ARGS)
 		noisevector = cumsum(0.05(rand(length(volts)) .- 0.5))
 		steptime = sweeptime/length(volts)
 		for (i, voltage) in enumerate(volts)
+			iv_cancel_sweep && break
 			currtime = now()
+			push!(ivsweep_time, Dates.now())
 			push!(ivsweep_x, voltage)
 			push!(ivsweep_y, voltage + 2voltage^3 + noisevector[i])
 			now() - currtime < steptime && autosleep(steptime - (now() - currtime))
 		end
+		iv_sweeping_bool = false
 	end
 
 	rt_xflags = ImPlot.ImPlotAxisFlags_None | ImPlot.ImPlotAxisFlags_AutoFit
 	rt_yflags = ImPlot.ImPlotAxisFlags_None | ImPlot.ImPlotAxisFlags_AutoFit
+	realtime_time = fill(Dates.now(), 1000) .+ Microsecond.(1:1000)
 	realtime_x = collect(1:1000)
 	realtime_y = cumsum(rand(1000) .-0.5)
 	rt_set_volts::Float32 = 1.0f0
@@ -119,9 +133,11 @@ function (@main)(ARGS)
 			starttime = now()
 			if monitoring_keithley
 				if isempty(realtime_x)
+					push!(realtime_time, Dates.now())
 					push!(realtime_x, 1)
 					push!(realtime_y, rand()-0.5)
 				end
+				push!(realtime_time, Dates.now())
 				push!(realtime_x, realtime_x[end]+1)
 				push!(realtime_y, realtime_y[end]+rand()-0.5)
 			end
@@ -133,16 +149,23 @@ function (@main)(ARGS)
 
 	show_style_editor = false
 
-	ig.render(ctx; window_size=(1000,1200), window_title="Keithley Pico", on_exit=() -> ImPlot.DestroyContext(p_ctx)) do
-		
+	exit_application_bool = true
+	first_frame = true
+	ig.render(ctx; window_size=(1,1), window_title="Keithley Pico", on_exit=() -> ImPlot.DestroyContext(p_ctx)) do
+		!exit_application_bool && exit()
+		if first_frame
+			win = ig._current_window(Val{:GlfwOpenGL3}())
+			GLFW.HideWindow(win)
+		end
+		first_frame = false
+
 		if show_style_editor
 			ig.Begin("Plot Style Editor")
 			ImPlot.ShowStyleEditor(ImPlot.GetStyle())
 			ig.End()
 		end
-		
-		ig.SetNextWindowPos((0,0))
-		ig.Begin("Plot Window", Ref(true),
+
+		@c ig.Begin("Plot Window", &exit_application_bool,
 			ig.ImGuiWindowFlags_MenuBar |
 			ig.ImGuiWindowFlags_NoCollapse |
 			ig.ImGuiWindowFlags_AlwaysAutoResize)
@@ -166,6 +189,52 @@ function (@main)(ARGS)
 					ImPlot.PlotLine("data", ivsweep_x, ivsweep_y)
 					ImPlot.EndPlot()
 				end
+				ig.SameLine()
+				ig.BeginGroup()
+				if ig.Button("Clear Data##iv", (300,100)) && !iv_sweeping_bool
+					ig.OpenPopup("clear_data_popup##iv")
+				end
+				if iv_sweeping_bool
+					if ig.BeginItemTooltip()
+						ig.TextColored((255,0,0,255), "You Cannot clear data during a sweep")
+						ig.EndTooltip()
+					end
+				end
+				if ig.BeginPopup("clear_data_popup##iv")
+					ig.SeparatorText("Are you sure you want to erase the data?")
+					ig.SeparatorText("")
+					if ig.Button("I'm sure I want to perminently erase data.")
+						empty!(ivsweep_time)
+						empty!(ivsweep_x)
+						empty!(ivsweep_y)
+						ig.CloseCurrentPopup()
+					end
+					ig.EndPopup()
+				end
+				# ig.PushStyleVar()
+				scalefactor = 10.0
+				ig.ScaleAllSizes(style, scalefactor)
+				ig.Text("Maximum current: $(isempty(ivsweep_y) ? "NAN" : round(maximum(ivsweep_y), sigdigits=5))")
+				ig.Text("Minimum current: $(isempty(ivsweep_y) ? "NAN" : round(minimum(ivsweep_y), sigdigits=5))")
+				ig.ScaleAllSizes(style, 1/scalefactor)
+				if ig.Button("Save Data##iv", (300,100)) && !iv_sweeping_bool
+					filepath = save_file(;filterlist="csv")
+					if !isempty(filepath)
+						open(filepath, "w") do io
+							writedlm(io, ["TimeStamp" "Voltage" "Current"], ',')
+							isempty(realtime_time) && return
+							writedlm(io, [ivsweep_time ivsweep_x ivsweep_y], ',')
+						end
+					end
+				end
+				if iv_sweeping_bool
+					if ig.BeginItemTooltip()
+						ig.TextColored((255,0,0,255), "You Cannot save data during a sweep")
+						ig.EndTooltip()
+					end
+				end
+				ig.EndGroup()
+
 				ig.PushItemWidth(150.0f0)
 				@c ig.DragFloat("Minimum Voltage", &iv_min_volts, 0.01f0)
 				ig.SameLine()
@@ -180,13 +249,20 @@ function (@main)(ARGS)
 				@c ig.Combo(" ", &iv_sweep_dir, ["Start Sweep Positive", "Start Sweep Negative"])
 				ig.PopItemWidth()
 
-				if ig.Button("Start Sweep")
+				if !iv_sweeping_bool && ig.Button("Start Sweep") && !monitoring_keithley
 					ig.OpenPopup("start_sweep_popup")
 				end
-				if ig.BeginPopupModal("start_sweep_popup")
+				if monitoring_keithley
+					if ig.BeginItemTooltip()
+						ig.TextColored((255,0,0,255), "You Cannot clear data during a sweep")
+						ig.EndTooltip()
+					end
+				end
+				if ig.BeginPopup("start_sweep_popup")
 					ig.SeparatorText("Are you sure you want to start a sweep?")
 					ig.SeparatorText("Starting a sweep will erase the previous sweep from memory.")
 					if ig.Button("I'm sure I want to perminently erase data and start a new sweep.")
+						iv_cancel_sweep = false
 						unitvec = [seconds, minutes, hours]
 						sweeptime = unitvec[iv_time_units+1](iv_sweep_time)
 						errormonitor(Threads.@async start_iv_sweep(iv_min_volts, iv_max_volts, iv_step_voltage, iv_init_voltage, iv_sweep_dir, sweeptime))
@@ -194,9 +270,8 @@ function (@main)(ARGS)
 					end
 					ig.EndPopup()
 				end
-				if monitoring_keithley
-					ig.SameLine()
-					ig.TextColored((255,0,0,255), "Currently monitoring keithley,\n plese stop monitoring")
+				if iv_sweeping_bool && ig.Button("Cancel Sweep##iv_sweep")
+					iv_cancel_sweep = true
 				end
 				ig.EndTabItem()
 			end
@@ -210,20 +285,44 @@ function (@main)(ARGS)
 					ImPlot.EndPlot()
 				end
 				ig.SameLine()
-				if ig.Button("Clear Data")
+				ig.BeginGroup()
+				if ig.Button("Clear Data", (300,100))
 					ig.OpenPopup("clear_data_popup")
 				end
-				if ig.BeginPopupModal("clear_data_popup")
+				if ig.BeginPopup("clear_data_popup")
 					ig.SeparatorText("Are you sure you want to erase the data?")
 					ig.SeparatorText("")
 					if ig.Button("I'm sure I want to perminently erase data.")
 						empty!(keithley_realtime_data)
+						empty!(realtime_time)
 						empty!(realtime_x)
 						empty!(realtime_y)
 						ig.CloseCurrentPopup()
 					end
 					ig.EndPopup()
 				end
+				# ig.PushStyleVar()
+				scalefactor = 10.0
+				ig.ScaleAllSizes(style, scalefactor)
+				ig.Text("Maximum current: $(isempty(realtime_y) ? "NAN" : round(maximum(realtime_y), sigdigits=5))")
+				ig.Text("Minimum current: $(isempty(realtime_y) ? "NAN" : round(minimum(realtime_y), sigdigits=5))")
+				ig.Text("Average current: $(isempty(realtime_y) ? "NAN" : round(mean(realtime_y), sigdigits=5))")
+				ig.ScaleAllSizes(style, 1/scalefactor)
+				if ig.Button("Save Data##rt", (300,100))
+					old_monitoring = monitoring_keithley
+					monitoring_keithley = false
+					filepath = save_file()
+					if !isempty(filepath)
+						open(filepath, "w") do io
+							writedlm(io, ["TimeStamp" "Voltage" "Current"], ',')
+							isempty(realtime_time) && return
+							writedlm(io, [realtime_time realtime_x realtime_y], ',')
+						end
+					end
+					monitoring_keithley = old_monitoring
+				end
+				ig.EndGroup()
+
 				ig.PushItemWidth(150.0f0)
 				@c ig.DragFloat("Set Voltage", &rt_set_volts, 0.001f0)
 				if rt_prev_set_volts != rt_set_volts
@@ -253,6 +352,10 @@ function (@main)(ARGS)
 						monitoring_keithley = !monitoring_keithley
 					end
 				end
+				if iv_sweeping_bool
+					ig.SameLine()
+					ig.TextColored((255,0,0,255), "A sweep is currently in progress,\nplese wait for it to finish or cancel it")
+				end 
 				ig.EndTabItem()
 			end
 			ig.EndTabBar()
