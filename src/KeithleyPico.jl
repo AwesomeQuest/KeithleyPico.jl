@@ -174,7 +174,7 @@ function (@main)(ARGS)
 		end
 		if show_imgui_style_editor
 			ig.Begin("ImGui Style Editor")
-			ImPlot.ShowStyleEditor(ImPlot.GetStyle())
+			ig.ShowStyleEditor(ImPlot.GetStyle())
 			ig.End()
 		end
 
@@ -332,7 +332,7 @@ function (@main)(ARGS)
 				@c ig.CheckboxFlags("Fit Y-Axis##rt", &rt_yflags, ImPlot.ImPlotAxisFlags_AutoFit)
 				@c ig.CheckboxFlags("Range Fit X-Axis##rt", &rt_xflags, ImPlot.ImPlotAxisFlags_RangeFit)
 				ig.SameLine()
-				@c ig.CheckboxFlags("Rnage Fit Y-Axis##rt", &rt_yflags, ImPlot.ImPlotAxisFlags_RangeFit)
+				@c ig.CheckboxFlags("Range Fit Y-Axis##rt", &rt_yflags, ImPlot.ImPlotAxisFlags_RangeFit)
 				if ImPlot.BeginPlot("Foo", "x1", "y1", ig.ImVec2(800, 800))
 					ImPlot.SetupAxes("Time", "Current", rt_xflags, rt_yflags)
 					ImPlot.PlotLine("realtime", realtime_x, realtime_y)
