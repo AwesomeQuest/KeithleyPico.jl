@@ -10,9 +10,10 @@ import ImPlot
 include("BetterSleep.jl")
 using .BetterSleep
 import .BetterSleep: now
+using Dates
+using TimesDates
 
 # using Instruments
-using Dates
 
 global keithley_sample_period::Nano = seconds(0.01)
 global keithley_realtime_data::Vector{Tuple{Nano, Float32, Float32}} = Tuple{Nano, Float32, Float32}[]
@@ -23,7 +24,12 @@ global keithley_realtime_data::Vector{Tuple{Nano, Float32, Float32}} = Tuple{Nan
 # global SAMPLE_RATE::Float64 = 10
 
 # global const TIMESTART::DateTime = now()
-# global TIMESTAMP_MODE::Symbol = :datetime
+#= Possible modes 
+	:datetime
+	:seconds
+	:delta
+=#
+global TIMESTAMP_MODE::Symbol = :datetime
 
 # function normalizetime(time)
 # 	Microsecond(time)*10e6
@@ -64,6 +70,7 @@ global keithley_realtime_data::Vector{Tuple{Nano, Float32, Float32}} = Tuple{Nan
 
 
 function (@main)(ARGS)
+	global TIMESTAMP_MODE
 	
 	ig.set_backend(:GlfwOpenGL3)
 
@@ -90,7 +97,7 @@ function (@main)(ARGS)
 	iv_sweep_dir::Int32		= 0
 	xs = iv_min_volts:iv_step_voltage:iv_max_volts
 	ivsweep_x = [xs; reverse(xs)]
-	ivsweep_time = fill(Dates.now(), length(ivsweep_x)) .+ Microsecond.(1:length(ivsweep_x))
+	ivsweep_time = fill(now(), length(ivsweep_x)) .+ micros.(1:length(ivsweep_x))
 	ivsweep_y = [x + 2x^3 for x in ivsweep_x] .+ cumsum(0.05(rand(length(ivsweep_x)) .- 0.5))
 	iv_sweeping_bool = false
 	iv_cancel_sweep = false
@@ -111,7 +118,7 @@ function (@main)(ARGS)
 		for (i, voltage) in enumerate(volts)
 			iv_cancel_sweep && break
 			currtime = now()
-			push!(ivsweep_time, Dates.now())
+			push!(ivsweep_time, now())
 			push!(ivsweep_x, voltage)
 			push!(ivsweep_y, voltage + 2voltage^3 + noisevector[i])
 			now() - currtime < steptime && autosleep(steptime - (now() - currtime))
@@ -119,9 +126,9 @@ function (@main)(ARGS)
 		iv_sweeping_bool = false
 	end
 
-	rt_xflags = ImPlot.ImPlotAxisFlags_None | ImPlot.ImPlotAxisFlags_AutoFit
+	rt_xflags = ImPlot.ImPlotAxisFlags_None | ImPlot.ImPlotAxisFlags_AutoFit | ImPlot.ImPlotAxisFlags_RangeFit
 	rt_yflags = ImPlot.ImPlotAxisFlags_None | ImPlot.ImPlotAxisFlags_AutoFit
-	realtime_time = fill(Dates.now(), 1000) .+ Microsecond.(1:1000)
+	realtime_time = fill(now(), 1000) .+ micros.(1:1000)
 	realtime_x = collect(1:1000)
 	realtime_y = cumsum(rand(1000) .-0.5)
 	rt_set_volts::Float32 = 1.0f0
@@ -133,11 +140,11 @@ function (@main)(ARGS)
 			starttime = now()
 			if monitoring_keithley
 				if isempty(realtime_x)
-					push!(realtime_time, Dates.now())
+					push!(realtime_time, now())
 					push!(realtime_x, 1)
 					push!(realtime_y, rand()-0.5)
 				end
-				push!(realtime_time, Dates.now())
+				push!(realtime_time, now())
 				push!(realtime_x, realtime_x[end]+1)
 				push!(realtime_y, realtime_y[end]+rand()-0.5)
 			end
@@ -147,7 +154,8 @@ function (@main)(ARGS)
 	errormonitor(Threads.@async livedata())
 
 
-	show_style_editor = false
+	show_plot_style_editor = false
+	show_imgui_style_editor = false
 
 	exit_application_bool = true
 	first_frame = true
@@ -159,8 +167,13 @@ function (@main)(ARGS)
 		end
 		first_frame = false
 
-		if show_style_editor
+		if show_plot_style_editor
 			ig.Begin("Plot Style Editor")
+			ImPlot.ShowStyleEditor(ImPlot.GetStyle())
+			ig.End()
+		end
+		if show_imgui_style_editor
+			ig.Begin("ImGui Style Editor")
 			ImPlot.ShowStyleEditor(ImPlot.GetStyle())
 			ig.End()
 		end
@@ -172,8 +185,21 @@ function (@main)(ARGS)
 
 		if (ig.BeginMenuBar())
 			if (ig.BeginMenu("Tools"))
-				@c ig.MenuItem("Show Plot Style Editor", "", &show_style_editor)
+				@c ig.MenuItem("Show Plot Style Editor", "", &show_plot_style_editor)
+				@c ig.MenuItem("Show ImGui Style Editor", "", &show_imgui_style_editor)
 				ig.EndMenu();
+			end
+			if ig.BeginMenu("Units")
+				if ig.TreeNode("Time Units")
+					selected = TIMESTAMP_MODE === :datetime ? 1 : TIMESTAMP_MODE === :seconds ? 2 : TIMESTAMP_MODE === :delta ? 3 : -1
+					ig.Selectable("DateTime Timestamps", selected === 1) && (selected = 1)
+					ig.Selectable("Seconds since start of capture", selected === 2) && (selected = 2)
+					ig.Selectable("Seconds since last capture", selected === 3) && (selected = 3)
+	
+					TIMESTAMP_MODE = [:datetime, :seconds, :delta][selected]
+					ig.TreePop()
+				end
+				ig.EndMenu()
 			end
 			ig.EndMenuBar();
 		end
@@ -224,9 +250,31 @@ function (@main)(ARGS)
 					filepath = save_file(;filterlist="csv")
 					if !isempty(filepath)
 						open(filepath, "w") do io
-							writedlm(io, ["TimeStamp" "Voltage" "Current"], ',')
-							isempty(realtime_time) && return
-							writedlm(io, [ivsweep_time ivsweep_x ivsweep_y], ',')
+							isempty(ivsweep_time) && return
+							time = copy(ivsweep_time)
+							if TIMESTAMP_MODE === :datetime
+								timedatenow, nanonow = TimeDate(Dates.now()), BetterSleep.now()
+								synthetic_first_time = timedatenow - Nanosecond((nanonow - time[1]).ns)
+								time = [synthetic_first_time + Nanosecond((tt - time[1]).ns) for tt in time]
+								timeunit = "[DateTime]"
+							elseif TIMESTAMP_MODE === :seconds
+								time = (time .- [time[1]]) .|> x->x.ns/1e9
+								timeunit = "[seconds]"
+							elseif TIMESTAMP_MODE === :delta
+								lasttime = time[1]
+								time[1] = Nano(0)
+								for i in eachindex(time)
+									i == 1 && continue
+									lasttime, time[i] = time[i], lasttime - time[i]
+								end
+								time = time .|> x->x.ns/1e9
+								timeunit = "[seconds]"
+							else
+								time = time .|> x->x.ns
+								timeunit = "[Nanoseconds]"
+							end
+							writedlm(io, ["TimeStamp "*timeunit "Voltage" "Current"], ',')
+							writedlm(io, [time ivsweep_x ivsweep_y], ',')
 						end
 					end
 				end
@@ -320,9 +368,31 @@ function (@main)(ARGS)
 					filepath = save_file(;filterlist="csv")
 					if !isempty(filepath)
 						open(filepath, "w") do io
-							writedlm(io, ["TimeStamp" "Voltage" "Current"], ',')
 							isempty(realtime_time) && return
-							writedlm(io, [realtime_time realtime_x realtime_y], ',')
+							time = copy(realtime_time)
+							if TIMESTAMP_MODE === :datetime
+								timedatenow, nanonow = TimeDate(Dates.now()), BetterSleep.now()
+								synthetic_first_time = timedatenow - Nanosecond((nanonow - time[1]).ns)
+								time = [synthetic_first_time + Nanosecond((tt - time[1]).ns) for tt in time]
+								timeunit = "[DateTime]"
+							elseif TIMESTAMP_MODE === :seconds
+								time = (time .- [time[1]]) .|> x->x.ns/1e9
+								timeunit = "[seconds]"
+							elseif TIMESTAMP_MODE === :delta
+								lasttime = time[1]
+								time[1] = Nano(0)
+								for i in eachindex(time)
+									i == 1 && continue
+									lasttime, time[i] = time[i], lasttime - time[i]
+								end
+								time = time .|> x->x.ns/1e9
+								timeunit = "[seconds]"
+							else
+								time = time .|> x->x.ns
+								timeunit = "[Nanoseconds]"
+							end
+							writedlm(io, ["TimeStamp "*timeunit "Voltage" "Current"], ',')
+							writedlm(io, [time realtime_x realtime_y], ',')
 						end
 					end
 					monitoring_keithley = old_monitoring
