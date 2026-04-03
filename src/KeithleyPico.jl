@@ -58,7 +58,7 @@ function keithly_monitor()
 	global KEITHLY
 	global rt_set_volts
 
-	println("Starting monitor")
+	@warn "Starting monitor"
 	write(KEITHLY, "OUTP ON")
 	write(KEITHLY, "SENS:CURR:PROT $(MAX_CURRENT)")
 	write(KEITHLY, "SOUR:VOLT $((rt_set_volts))")
@@ -67,7 +67,8 @@ function keithly_monitor()
 		voltage,current = nothing, nothing
 		try
 			voltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
-		catch
+		catch e
+			@error e
 			continue
 		end
 		push!(keithley_rt_measurment_time, starttime)
@@ -123,7 +124,8 @@ function keithly_sweep(minvoltage, maxvoltage, stepvoltage, initialvoltage, dire
 		actvoltage,current = nothing, nothing
 		try
 			actvoltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
-		catch
+		catch e
+			@error e
 			continue
 		end
 		push!(keithley_iv_measurment_time, now())
@@ -472,9 +474,9 @@ function (@main)(ARGS)
 					ig.SeparatorText("Are you sure you want to erase the data?")
 					ig.SeparatorText("")
 					if ig.Button("I'm sure I want to permanently erase data.")
-						empty!(realtime_time)
-						empty!(realtime_x)
-						empty!(realtime_y)
+						empty!(keithley_rt_measurment_time)
+						empty!(keithley_rt_measurment_current)
+						empty!(keithley_rt_measurment_volts)
 						ig.CloseCurrentPopup()
 					end
 					ig.EndPopup()
@@ -549,20 +551,17 @@ function (@main)(ARGS)
 				if !monitoring_keithley
 					if !isempty(keithley_rt_measurment_time)
 						if ig.Button("Resume", (180DPI*unsafe_load(style.FontScaleDpi),30DPI*unsafe_load(style.FontScaleDpi))) && !iv_sweeping_bool
-							@info "Button Pressed"
 							monitoring_keithley = !monitoring_keithley
 							errormonitor(@async keithly_monitor())
 							rt_prev_set_volts = rt_set_volts
 						end
 					elseif ig.Button("Start", (180DPI*unsafe_load(style.FontScaleDpi),30DPI*unsafe_load(style.FontScaleDpi))) && !iv_sweeping_bool
-						@info "Button Pressed"
 						monitoring_keithley = !monitoring_keithley
 						errormonitor(@async keithly_monitor())
 						rt_prev_set_volts = rt_set_volts
 					end
 				else
 					if ig.Button("Stop", (180DPI*unsafe_load(style.FontScaleDpi),30DPI*unsafe_load(style.FontScaleDpi)))
-						@info "Button Pressed"
 						monitoring_keithley = !monitoring_keithley
 					end
 				end
