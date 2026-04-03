@@ -1,6 +1,6 @@
 name = "KeithleyPico"
 uuid = "9c2e59a9-ddd1-4208-978e-ca78fec45363"
-version = "0.4.7"
+version = "0.4.8"
 authors = ["Awesome Quest <torfit@gmail.com>"]
 
 [deps]

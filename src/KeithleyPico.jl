@@ -61,15 +61,15 @@ function keithly_monitor()
 	@warn "Starting monitor"
 	write(KEITHLY, "OUTP ON")
 	write(KEITHLY, "SENS:CURR:PROT $(MAX_CURRENT)")
+	@info "SOUR:VOLT $(rt_set_volts)"
+	write(KEITHLY, "SOUR:VOLT $(rt_set_volts)")
 	while monitoring_keithley
-		write(KEITHLY, "SOUR:VOLT $((rt_set_volts))")
 		starttime = now()
 		voltage,current = nothing, nothing
 		try
-			Q = query(KEITHLY, "MEAS:CURR?"; delay=0.01)
-			voltage,current = reinterpret(Float32, Q[3:end] |> codeunits)
+			voltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
 		catch e
-			@error e
+			# @error e
 			continue
 		end
 		push!(keithley_rt_measurment_time, starttime)
@@ -111,6 +111,7 @@ function keithly_sweep(minvoltage, maxvoltage, stepvoltage, initialvoltage, dire
 	for (i, voltage) in enumerate(volts)
 		iv_cancel_sweep && break
 		currtime = now()
+		@info "SOUR:VOLT $voltage"
 		write(KEITHLY, "SOUR:VOLT $voltage")
 		if now() - currtime < steptime
 			while !iv_cancel_sweep
@@ -126,7 +127,7 @@ function keithly_sweep(minvoltage, maxvoltage, stepvoltage, initialvoltage, dire
 		try
 			actvoltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
 		catch e
-			@error e
+			# @error e
 			continue
 		end
 		push!(keithley_iv_measurment_time, now())
