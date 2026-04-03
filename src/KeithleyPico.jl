@@ -58,32 +58,18 @@ function keithly_monitor()
 	global KEITHLY
 	global rt_set_volts
 
-<<<<<<< HEAD
 	println("Starting monitor")
 	write(KEITHLY, "OUTP ON")
 	write(KEITHLY, "SENS:CURR:PROT $(MAX_CURRENT)")
-=======
-	write(KEITHLY, "OUTP ON")
-	write(KEITHLY, "SENS:CURR:PROT $(MAX_CURRENT)")
-	write(KEITHLY, "SOUR:VOLT $(Float64(rt_set_volts))")
->>>>>>> parent of 7b37648 (types and warns)
+	write(KEITHLY, "SOUR:VOLT $((rt_set_volts))")
 	while monitoring_keithley
-		write(KEITHLY, "SOUR:VOLT $((rt_set_volts))")
 		starttime = now()
 		voltage,current = nothing, nothing
-<<<<<<< HEAD
-		println("try measure")
-=======
->>>>>>> parent of 7b37648 (types and warns)
 		try
 			voltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
 		catch
 			continue
 		end
-<<<<<<< HEAD
-		println("Got measure")
-=======
->>>>>>> parent of 7b37648 (types and warns)
 		push!(keithley_rt_measurment_time, starttime)
 		push!(keithley_rt_measurment_volts, voltage)
 		push!(keithley_rt_measurment_current, current)
