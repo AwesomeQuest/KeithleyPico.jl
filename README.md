@@ -1,0 +1,2 @@
+# KeithleyPico
+Designed to control the Keithley DMM #Insert model number here#, KeithleyPico provides functionality for fixed voltage real-time current monitoring and time controlled I-V sweeping, all done with real-time plotting and the ability to save data after a run is finished
