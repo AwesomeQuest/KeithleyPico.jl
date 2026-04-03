@@ -67,7 +67,8 @@ function keithly_monitor()
 		starttime = now()
 		voltage,current = nothing, nothing
 		try
-			voltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
+			@show Q = query(KEITHLY, "MEAS:CURR?"; delay=0.01)
+			voltage,current = reinterpret(Float32, Q[3:end] |> codeunits)
 		catch e
 			# @error e
 			continue
@@ -125,7 +126,8 @@ function keithly_sweep(minvoltage, maxvoltage, stepvoltage, initialvoltage, dire
 		end
 		actvoltage,current = nothing, nothing
 		try
-			actvoltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
+			@show Q = query(KEITHLY, "MEAS:CURR?"; delay=0.01)
+			actvoltage,current = reinterpret(Float32, Q[3:end] |> codeunits)
 		catch e
 			# @error e
 			continue
@@ -590,8 +592,8 @@ function (@main)(ARGS)
 	end
 
 	
-	# write(KEITHLY, "OUTP OFF")
-	# Instruments.disconnect!(KEITHLY)
+	write(KEITHLY, "OUTP OFF")
+	Instruments.disconnect!(KEITHLY)
 end
 
 
