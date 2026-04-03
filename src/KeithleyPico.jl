@@ -67,7 +67,7 @@ function keithly_monitor()
 		starttime = now()
 		voltage,current = nothing, nothing
 		try
-			@show Q = query(KEITHLY, "MEAS:CURR?"; delay=0.01)
+			@show Q = query(KEITHLY, "MEAS:CURR?"; delay=0.1)
 			voltage,current = reinterpret(Float32, Q[3:end] |> codeunits)
 		catch e
 			# @error e
