@@ -61,12 +61,13 @@ function keithly_monitor()
 	@warn "Starting monitor"
 	write(KEITHLY, "OUTP ON")
 	write(KEITHLY, "SENS:CURR:PROT $(MAX_CURRENT)")
-	write(KEITHLY, "SOUR:VOLT $((rt_set_volts))")
 	while monitoring_keithley
+		write(KEITHLY, "SOUR:VOLT $((rt_set_volts))")
 		starttime = now()
 		voltage,current = nothing, nothing
 		try
-			voltage,current = reinterpret(Float32, query(KEITHLY, "MEAS:CURR?"; delay=0.01)[3:end] |> codeunits)
+			Q = query(KEITHLY, "MEAS:CURR?"; delay=0.01)
+			voltage,current = reinterpret(Float32, Q[3:end] |> codeunits)
 		catch e
 			@error e
 			continue
