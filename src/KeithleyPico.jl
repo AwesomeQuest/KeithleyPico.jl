@@ -65,6 +65,14 @@ function keithly_monitor()
 	write(KEITHLY, "SOUR:VOLT $(rt_set_volts)")
 	while monitoring_keithley
 		starttime = now()
+		while now() - starttime < keithley_sample_period
+			if now() - starttime < keithley_sample_period > millis(100)
+				autosleep(millis(100))
+			else
+				autosleep(keithley_sample_period - (now() - starttime))
+				break
+			end
+		end
 		voltage,current = nothing, nothing
 		try
 			@show Q = query(KEITHLY, "MEAS:CURR?"; delay=0.1)
@@ -76,14 +84,6 @@ function keithly_monitor()
 		push!(keithley_rt_measurment_time, starttime)
 		push!(keithley_rt_measurment_volts, voltage)
 		push!(keithley_rt_measurment_current, current)
-		while now() - starttime < keithley_sample_period
-			if now() - starttime < keithley_sample_period > millis(100)
-				autosleep(millis(100))
-			else
-				autosleep(keithley_sample_period - (now() - starttime))
-				break
-			end
-		end
 	end
 	write(KEITHLY, "OUTP OFF")
 end
